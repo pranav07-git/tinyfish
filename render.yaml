@@ -13,8 +13,9 @@ services:
     envVars:
       - key: TINYFISH_API_KEY
         sync: false          # you're prompted for it on first deploy
-      - key: APP_PASSWORD
-        sync: false          # you're prompted for it on first deploy
+      # No APP_PASSWORD: login is off, anyone with the URL can use the app. Add APP_PASSWORD to turn login on.
+      - key: MAX_AGENT_RUNS_PER_DAY
+        value: "25"          # protects your TinyFish credit; job-board fetches don't count
       - key: SECRET_KEY
         generateValue: true  # Render generates a random value
       - key: KEEP_ALIVE

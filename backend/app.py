@@ -24,7 +24,7 @@ import security  # noqa: E402
 from security import rate_limit  # noqa: E402
 
 log = logging.getLogger("jobfish")
-settings = security.init()  # fails fast if APP_PASSWORD is missing
+settings = security.init()
 security.epoch_getter = lambda: db.get_setting("session_epoch", 0)
 
 
@@ -104,6 +104,8 @@ class LoginIn(BaseModel):
 
 @app.post("/api/auth/login")
 def login(b: LoginIn, request: Request, response: Response):
+    if not settings.auth_enabled:
+        return {"ok": True}
     key = f"login:{security.client_ip(request)}"
     limit, window = security.LIMITS["login"]
     # lockout is checked before the password, so guesses during a lockout are never evaluated
@@ -127,8 +129,8 @@ def logout(response: Response):
 
 @app.get("/api/auth/me")
 def me(request: Request):
-    return {"authenticated": security.valid_session(request.cookies.get(security.COOKIE)),
-            "vault_enabled": settings.vault_enabled}
+    authed = not settings.auth_enabled or security.valid_session(request.cookies.get(security.COOKIE))
+    return {"authenticated": authed, "auth_enabled": settings.auth_enabled, "vault_enabled": settings.vault_enabled}
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
@@ -348,6 +350,8 @@ def live_scan(sid: int, request: Request):
     rate_limit(request, "agent")
     if _agent_slots_left() <= 0:
         raise HTTPException(429, f"{settings.max_agent_runs} agent runs already in progress. Wait for one to finish.")
+    if not scanner.take_daily_agent_run():
+        raise HTTPException(429, scanner.DAILY_CAP_MSG)
 
     def gen():
         for ev in scanner.stream_scan(source):
@@ -404,6 +408,8 @@ def verify(jid: int, request: Request):
     rate_limit(request, "agent")
     if _agent_slots_left() <= 0:
         raise HTTPException(429, "Agent runs are busy. Try again shortly.")
+    if not scanner.take_daily_agent_run():
+        raise HTTPException(429, scanner.DAILY_CAP_MSG)
     try:
         return scanner.verify_job(job)
     except Exception as e:
@@ -524,7 +530,7 @@ def tf_wallet():
 
 def _vault_on():
     if not settings.vault_enabled:
-        raise HTTPException(403, "Vault is disabled on this server (set ENABLE_VAULT=1)")
+        raise HTTPException(403, "Vault is disabled on this server (needs login on and ENABLE_VAULT=1)")
 
 
 def _confirm(password: str):

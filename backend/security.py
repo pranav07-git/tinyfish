@@ -4,7 +4,8 @@ JobFish spends the owner's TinyFish credit and can hold vault credentials, so ev
 /api route except login and health requires a session.
 
 Config (environment):
-  APP_PASSWORD    required. The one login password.
+  APP_PASSWORD    the one login password. If unset, login is turned off and the app is open to
+                  anyone with the URL (vault is then forced off; spend caps still apply).
   SECRET_KEY      signs session cookies. If unset, a random key is used and sessions
                   reset on every restart.
   COOKIE_SECURE   "0" to allow the cookie over plain http (local dev only). Default "1".
@@ -37,10 +38,12 @@ def _env_bool(name: str, default: bool) -> bool:
 class Settings:
     def __init__(self):
         self.password = os.getenv("APP_PASSWORD", "")
-        if len(self.password) < 8:
-            raise RuntimeError(
-                "APP_PASSWORD must be set (8+ characters). Add it to .env or the host's environment variables."
-            )
+        self.auth_enabled = bool(self.password)
+        if self.auth_enabled and len(self.password) < 8:
+            raise RuntimeError("APP_PASSWORD must be at least 8 characters (or unset it to turn login off).")
+        if not self.auth_enabled:
+            print("WARNING: APP_PASSWORD not set: login is OFF and anyone with the URL can use this app. "
+                  "Vault is disabled; daily agent-run cap still applies.")
         key = os.getenv("SECRET_KEY")
         if not key:
             print("WARNING: SECRET_KEY not set; using a random key (everyone is logged out on restart).")
@@ -48,7 +51,8 @@ class Settings:
         self.key = hashlib.sha256(key.encode()).digest()
         self.cookie_secure = _env_bool("COOKIE_SECURE", True)
         self.session_seconds = int(os.getenv("SESSION_DAYS", "7")) * 86400
-        self.vault_enabled = _env_bool("ENABLE_VAULT", False)
+        # Never expose stored credentials on an open (no-login) instance.
+        self.vault_enabled = _env_bool("ENABLE_VAULT", False) and self.auth_enabled
         self.max_agent_runs = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "3"))
         self.max_sources = int(os.getenv("MAX_SOURCES", "100"))
 
@@ -101,6 +105,8 @@ def valid_session(token: str | None) -> bool:
 
 
 def check_password(given: str) -> bool:
+    if not settings.auth_enabled:
+        return False
     return hmac.compare_digest(
         hashlib.sha256(given.encode()).digest(), hashlib.sha256(settings.password.encode()).digest()
     )
@@ -196,7 +202,7 @@ async def middleware(request: Request, call_next):
             origin = request.headers.get("origin")
             if origin and origin.split("://", 1)[-1] != request.headers.get("host"):
                 return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
-        if path not in PUBLIC_PATHS and not valid_session(request.cookies.get(COOKIE)):
+        if settings.auth_enabled and path not in PUBLIC_PATHS and not valid_session(request.cookies.get(COOKIE)):
             return JSONResponse({"detail": "Not signed in"}, status_code=401)
 
     response = await call_next(request)

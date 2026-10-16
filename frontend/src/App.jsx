@@ -89,7 +89,7 @@ function Workspace({ auth, onSignOut }) {
             <button className="pill dark sm" disabled={!sources.length || scanning} onClick={scanAll}>
               {scanning ? "Scanning…" : "Refresh all"}
             </button>
-            <button className="link sm" onClick={onSignOut} title="Signs out on every device">Sign out</button>
+            {auth.auth_enabled && <button className="link sm" onClick={onSignOut} title="Signs out on every device">Sign out</button>}
           </div>
           <button className="burger" onClick={() => setMenu(!menu)} aria-label="Menu">{menu ? "✕" : "☰"}</button>
         </div>
@@ -97,7 +97,7 @@ function Workspace({ auth, onSignOut }) {
       {menu && (
         <div className="sheet">
           {TABS.map(([k, label]) => <button key={k} onClick={() => go(k)}>{label}</button>)}
-          <button onClick={onSignOut}>Sign out</button>
+          {auth.auth_enabled && <button onClick={onSignOut}>Sign out</button>}
         </div>
       )}
 

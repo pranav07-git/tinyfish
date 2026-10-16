@@ -22,6 +22,24 @@ import db
 from matching import DEFAULT_PREFS, infer_seniority, score_job
 
 MAX_AGENT_RUNS = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "3"))
+# Global cap on TinyFish agent runs per UTC day (scans, live scans, "still open?" checks). 0 = no cap.
+MAX_AGENT_RUNS_PER_DAY = int(os.getenv("MAX_AGENT_RUNS_PER_DAY", "25"))
+DAILY_CAP_MSG = f"Daily limit of {MAX_AGENT_RUNS_PER_DAY} agent runs reached; resets at midnight UTC. Job-board sources still refresh."
+_daily_lock = threading.Lock()
+
+
+def take_daily_agent_run() -> bool:
+    """Count one agent run against today's budget (stored in the DB). False if the cap is reached."""
+    if MAX_AGENT_RUNS_PER_DAY <= 0:
+        return True
+    today = datetime.now(timezone.utc).date().isoformat()
+    with _daily_lock:
+        used = db.get_setting("agent_runs_day", {})
+        n = used.get(today, 0) if isinstance(used, dict) else 0
+        if n >= MAX_AGENT_RUNS_PER_DAY:
+            return False
+        db.set_setting("agent_runs_day", {today: n + 1})
+        return True
 _clients: dict[str, TinyFish] = {}
 
 
@@ -226,6 +244,10 @@ def _run_scan(scan_id: int, source: dict, force: bool):
     if not force and not change_check(source):
         db.update("scans", scan_id, status="unchanged", finished_at=db.now(), note="Page not modified (Fetch API)")
         _finish_source(source["id"], "unchanged")
+        return
+    if not take_daily_agent_run():
+        db.update("scans", scan_id, status="failed", finished_at=db.now(), note=DAILY_CAP_MSG)
+        _finish_source(source["id"], "failed")
         return
     try:
         resp = client().agent.queue(**agent_kwargs(source))

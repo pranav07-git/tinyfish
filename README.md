@@ -26,7 +26,7 @@ JobFish runs as **one container**: FastAPI serves the API and the built React ap
 
 1. Push this repo to GitHub.
 2. In Render: **New → Blueprint**, connect the repo. Render reads `render.yaml`.
-3. When prompted, enter `TINYFISH_API_KEY` and a long random `APP_PASSWORD`. `SECRET_KEY` is generated for you.
+3. When prompted, enter `TINYFISH_API_KEY`. `SECRET_KEY` is generated for you. Login is off on the deployed app (no `APP_PASSWORD`); add an `APP_PASSWORD` variable in Render any time to turn it on.
 4. Deploy. Render builds the `Dockerfile`, health-checks `/api/health`, and gives you `https://<name>.onrender.com`.
 
 **Staying awake.** Free instances sleep after ~15 minutes without traffic. `backend/keepalive.py` pings the app's own public URL (`/api/health`) every 10 minutes, so it never goes idle. It's on automatically on Render; set `KEEP_ALIVE=0` to turn it off. As a backup (it also wakes the app after a crash), add a free uptime monitor such as UptimeRobot on `https://<name>.onrender.com/api/health` every 5 minutes.
@@ -37,7 +37,8 @@ Keep it at **one instance**: the refresh worker, rate limits and SQLite assume a
 
 ## Security
 
-- **Sign-in required.** Every `/api` route except sign-in and health needs a session. Sessions are HMAC-signed, `HttpOnly`, `Secure`, `SameSite=Strict` cookies that expire after `SESSION_DAYS`. Signing out revokes every session, and changing `APP_PASSWORD` or `SECRET_KEY` does too.
+- **Optional sign-in.** Login is on when `APP_PASSWORD` is set (locally) and off when it isn't (the Render config). With login off, the vault is forced off and `MAX_AGENT_RUNS_PER_DAY` (default 25) caps TinyFish agent spend; job-board fetches are free and uncapped.
+- **When login is on,** every `/api` route except sign-in and health needs a session. Sessions are HMAC-signed, `HttpOnly`, `Secure`, `SameSite=Strict` cookies that expire after `SESSION_DAYS`. Signing out revokes every session, and changing `APP_PASSWORD` or `SECRET_KEY` does too.
 - **Brute-force protection.** 5 failed sign-ins per IP in 15 minutes locks that IP out; the password isn't even checked while locked.
 - **CSRF.** State-changing requests need an `X-Jobfish` header and a same-origin `Origin`.
 - **Vault off by default.** `ENABLE_VAULT=1` turns it on; connecting or disconnecting then requires re-entering the password. Vault secrets are passed to TinyFish and never stored or logged by JobFish; only item labels are shown.
