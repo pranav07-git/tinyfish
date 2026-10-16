@@ -1,0 +1,25 @@
+# Render Blueprint (free plan): Dashboard → New → Blueprint → pick this repo.
+# Free instances sleep after ~15 min without traffic; backend/keepalive.py pings the app's own
+# public URL every 10 minutes so it stays awake. Free instances have no persistent disk, so the
+# SQLite database starts empty after each deploy or restart (jobs re-fetch in seconds).
+services:
+  - type: web
+    name: jobfish
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: TINYFISH_API_KEY
+        sync: false          # you're prompted for it on first deploy
+      - key: APP_PASSWORD
+        sync: false          # you're prompted for it on first deploy
+      - key: SECRET_KEY
+        generateValue: true  # Render generates a random value
+      - key: KEEP_ALIVE
+        value: "1"
+      - key: KEEP_ALIVE_MINUTES
+        value: "10"
+      - key: ENABLE_VAULT
+        value: "0"
